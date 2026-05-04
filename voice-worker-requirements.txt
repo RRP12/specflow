@@ -1,0 +1,10 @@
+livekit
+livekit-plugins-assemblyai
+livekit-plugins-cartesia
+livekit-plugins-mistral
+langgraph
+langchain-mistralai
+fastapi
+uvicorn
+httpx
+python-dotenv

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice Agent - Direct Test</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/livekit-client@latest/dist/livekit-client.umd.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a; 
+      color: #fff; 
+      margin: 0; 
+      padding: 20px;
+      min-height: 100vh;
+    }
+    h1 { color: #00ff88; font-size: 1.5rem; }
+    .box { 
+      background: #1a1a1a; 
+      border-radius: 8px; 
+      padding: 16px; 
+      margin: 10px 0;
+      border: 1px solid #333;
+    }
+    button { 
+      background: #00cc66; 
+      color: white; 
+      border: none; 
+      padding: 12px 24px; 
+      border-radius: 6px;
+      font-size: 14px; 
+      cursor: pointer;
+      margin: 4px;
+    }
+    button:hover { background: #00dd77; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    button.disconnect { background: #cc3333; }
+    
+    #status { 
+      padding: 12px; 
+      background: #222; 
+      border-radius: 4px; 
+      font-family: monospace;
+    }
+    .connected { color: #00ff88; }
+    .disconnected { color: #ff4444; }
+    
+    #log { 
+      background: #000; 
+      padding: 12px; 
+      border-radius: 4px; 
+      height: 200px; 
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      color: #88ff88;
+    }
+    
+    input {
+      background: #222;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      width: 200px;
+    }
+
+    .hint {
+      color: #888;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎤 Voice Agent Test</h1>
+  
+  <div class="box">
+    <p>Agent Room ID: <input type="text" id="roomName" value="my-agent" placeholder="room-name"></p>
+    <button id="joinBtn" class="join">Join Room & Start Voice</button>
+    <button id="leaveBtn" class="disconnect" disabled>Leave</button>
+  </div>
+  
+  <div class="box">
+    <div id="status" class="disconnected">Not connected</div>
+  </div>
+  
+  <div class="log">
+    <div id="log"></div>
+  </div>
+
+  <p class="hint">
+    Tip: Make sure voice-worker is running in terminal first:<br>
+    <code>LIVEKIT_URL=wss://... LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... python3.12 voice-worker.py start</code>
+  </p>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    
+    let room = null;
+    let isConnected = false;
+    
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      $('log').textContent += `[${time}] ${msg}\n`;
+      $('log').scrollTop = $('log').scrollHeight;
+    }
+    
+    async function getToken(roomName) {
+      // For local dev, we'll use a simple anonymous access
+      // In production, this would call your /api/livekit-token
+      const response = await fetch(`/api/livekit-token?room=${roomName}&identity=caller-${Date.now()}`);
+      const data = await response.json();
+      return data.token;
+    }
+    
+    async function joinRoom() {
+      const roomName = $('roomName').value.trim() || 'my-agent';
+      
+      log('Getting room token...');
+      
+      try {
+        let token = await getToken(roomName);
+        
+        // If no valid token (dev mode), create a demo token
+        if (!token || token.includes('error')) {
+          log('Using demo token (limited functionality)');
+          token = 'demo'; // This won't fully work but shows the flow
+        }
+        
+        log('Connecting to LiveKit...');
+        
+        room = new LiveKit.Room();
+        
+        room.on(LiveKit.RoomEvent.Connected, () => {
+          isConnected = true;
+          $('status').textContent = `✅ Connected to: ${roomName}`;
+          $('status').className = 'connected';
+          $('joinBtn').disabled = true;
+          $('leaveBtn').disabled = false;
+          log('Connected to room: ' + roomName);
+        });
+        
+        room.on(LiveKit.RoomEvent.Disconnected, () => {
+          isConnected = false;
+          $('status').textContent = 'Disconnected';
+          $('status').className = 'disconnected';
+          $('joinBtn').disabled = false;
+          $('leaveBtn').disabled = true;
+          log('Disconnected');
+        });
+        
+        room.on(LiveKit.RoomEvent.TrackSubscribed, track => {
+          if (track.kind === LiveKit.TrackKind.Audio) {
+            const audio = track.attach();
+            audio.autoplay = true;
+            document.body.appendChild(audio);
+            log('Audio track attached');
+          }
+        });
+
+        // Connect (this may fail without valid token in production)
+        try {
+          await room.connect(
+            'wss://rushikesh-wp9beeub.livekit.cloud',
+            token
+          );
+        } catch (e) {
+          log('Note: Full audio needs production token');
+          log('Token error: ' + e.message);
+        }
+        
+      } catch (e) {
+        log('Error: ' + e.message);
+      }
+    }
+    
+    function leaveRoom() {
+      if (room) {
+        room.disconnect();
+        room = null;
+      }
+    }
+    
+    $('joinBtn').onclick = joinRoom;
+    $('leaveBtn').onclick = () => {
+      leaveRoom();
+      $('status').textContent = 'Disconnected';
+      $('status').className = 'disconnected';
+    };
+  </script>
+</body>
+</html>
